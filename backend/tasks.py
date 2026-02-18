@@ -50,13 +50,15 @@ def _update_state(
     output_url: str | None = None,
     error: str | None = None,
 ) -> None:
-    state = {
+    # Merge into existing state so task_id and other fields are preserved
+    existing = _get_job_state(job_id) or {}
+    existing.update({
         "status": status,
         "progress": progress,
         "output_url": output_url,
         "error": error,
-    }
-    _set_job_state(job_id, state)
+    })
+    _set_job_state(job_id, existing)
     logger.info("Job %s → %s (%d%%)", job_id, status, progress)
 
 

@@ -15,8 +15,13 @@ from pydantic import BaseModel
 from backend.config import MAX_FILE_SIZE_MB, OUTPUT_DIR, REDIS_URL, TEMP_DIR
 from backend.tasks import celery_app, process_meme
 
+from fastapi.staticfiles import StaticFiles
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Resolve frontend directory relative to this file
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 app = FastAPI(title="Meme Lip-Sync Generator", version="1.0.0")
 
@@ -63,8 +68,11 @@ async def upload_file(file: UploadFile = File(...)):
     -------
     JSON with job_id and preview_url.
     """
-    allowed_types = {"image/gif", "video/mp4", "video/quicktime", "video/webm", "video/avi"}
-    allowed_extensions = {".gif", ".mp4", ".mov", ".webm", ".avi"}
+    allowed_types = {
+        "image/gif", "image/jpeg", "image/png", "image/webp",
+        "video/mp4", "video/quicktime", "video/webm", "video/avi",
+    }
+    allowed_extensions = {".gif", ".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov", ".webm", ".avi"}
 
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in allowed_extensions:
@@ -230,3 +238,7 @@ async def serve_output(filename: str):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# Mount frontend LAST so API routes take priority
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

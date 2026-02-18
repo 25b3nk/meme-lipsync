@@ -3,6 +3,9 @@
 import logging
 import os
 import subprocess
+import sys
+
+import cv2
 
 from backend.config import MODEL_PATH, WAV2LIP_DIR
 
@@ -58,16 +61,79 @@ def _get_video_duration(video_path: str) -> float:
     return float(result.stdout.strip())
 
 
-def _pad_audio_with_silence(wav_path: str, target_duration: float, output_path: str) -> None:
-    """Pad a WAV file with trailing silence to match target_duration."""
+def _trim_video_to_duration(video_path: str, duration: float, output_path: str) -> None:
+    """Trim a video to at most `duration` seconds."""
     cmd = [
         "ffmpeg", "-y",
-        "-i", wav_path,
-        "-af", f"apad",
-        "-t", str(target_duration),
+        "-i", video_path,
+        "-t", str(duration),
+        "-c", "copy",
         output_path,
     ]
-    _run(cmd, "Audio silence padding")
+    _run(cmd, "Video trim")
+
+
+SFD_MODEL_PATH = os.path.join(WAV2LIP_DIR, "face_detection/detection/sfd/s3fd.pth")
+SFD_MIN_BYTES = 80 * 1024 * 1024  # ~86 MB when complete
+
+
+def _sfd_ready() -> bool:
+    """Return True if the SFD face-detection model is fully downloaded."""
+    return os.path.isfile(SFD_MODEL_PATH) and os.path.getsize(SFD_MODEL_PATH) >= SFD_MIN_BYTES
+
+
+def _detect_face_box(video_path: str) -> tuple[int, int, int, int] | None:
+    """
+    Detect the first face in the video using MTCNN (facenet-pytorch).
+
+    Returns (y1, y2, x1, x2) for wav2lip --box argument, or None if SFD is
+    available (inference.py will then use SFD natively, which is more accurate).
+    """
+    if _sfd_ready():
+        logger.info("SFD model ready — letting inference.py handle face detection natively")
+        return None
+
+    try:
+        from facenet_pytorch import MTCNN
+        from PIL import Image
+    except ImportError:
+        logger.warning("facenet-pytorch not installed; falling back to SFD detector")
+        return None
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return None
+
+    mtcnn = MTCNN(keep_all=False, device="cpu", post_process=False)
+    found = None
+
+    for _ in range(30):  # check up to 30 frames
+        ret, frame = cap.read()
+        if not ret:
+            break
+        h_frame, w_frame = frame.shape[:2]
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        img = Image.fromarray(rgb)
+        boxes, probs = mtcnn.detect(img)
+        if boxes is not None and len(boxes) > 0 and probs[0] > 0.9:
+            fx1, fy1, fx2, fy2 = [int(v) for v in boxes[0]]
+            bh = fy2 - fy1
+            # Add padding for chin/forehead so Wav2Lip sees the full face
+            pad_v = int(bh * 0.25)
+            pad_h = int(bh * 0.1)
+            y1 = max(0, fy1 - pad_v)
+            y2 = min(h_frame, fy2 + pad_v)
+            x1 = max(0, fx1 - pad_h)
+            x2 = min(w_frame, fx2 + pad_h)
+            found = (y1, y2, x1, x2)
+            break
+
+    cap.release()
+    if found:
+        logger.info("Face detected via MTCNN: box=%s (skipping SFD download)", found)
+    else:
+        logger.warning("No face detected via MTCNN; inference.py will use SFD detector")
+    return found
 
 
 def run_lipsync(
@@ -106,20 +172,20 @@ def run_lipsync(
         video_duration,
     )
 
-    # Reject if audio is far longer than video (loop threshold = 1.5×)
-    if video_duration > 0 and audio_duration > video_duration * 1.5:
-        raise ValueError(
-            "Text too long for this meme — try shorter text. "
-            f"Audio is {audio_duration:.1f}s but video is only {video_duration:.1f}s."
-        )
+    # Trim video to audio duration (avoids processing unnecessary frames,
+    # especially important for image inputs that generate long looping videos)
+    effective_video_path = video_path
+    if audio_duration > 0 and video_duration > audio_duration:
+        logger.info("Trimming video to audio duration (%.2f s)", audio_duration)
+        trimmed_mp4 = os.path.join(job_dir, "input_trimmed.mp4")
+        _trim_video_to_duration(video_path, audio_duration, trimmed_mp4)
+        effective_video_path = trimmed_mp4
 
-    # Pad audio with silence if it is shorter than the video
     effective_audio_path = audio_path
-    if video_duration > 0 and audio_duration < video_duration:
-        logger.info("Padding audio to match video duration (%.2f s)", video_duration)
-        padded_wav = os.path.join(job_dir, "audio_padded.wav")
-        _pad_audio_with_silence(audio_path, video_duration, padded_wav)
-        effective_audio_path = padded_wav
+
+    # Detect face bounding box with OpenCV so we can pass --box and skip
+    # the SFD face-detector download inside inference.py
+    face_box = _detect_face_box(video_path)
 
     # Verify Wav2Lip repo and model exist
     inference_script = os.path.join(WAV2LIP_DIR, "inference.py")
@@ -137,15 +203,18 @@ def run_lipsync(
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
     cmd = [
-        "python", inference_script,
+        sys.executable, inference_script,
         "--checkpoint_path", MODEL_PATH,
-        "--face", video_path,
+        "--face", effective_video_path,
         "--audio", effective_audio_path,
         "--outfile", output_path,
         "--pads", "0", "10", "0", "0",
         "--resize_factor", "1",
         "--nosmooth",
     ]
+    if face_box is not None:
+        y1, y2, x1, x2 = face_box
+        cmd += ["--box", str(y1), str(y2), str(x1), str(x2)]
 
     logger.info("Running Wav2Lip inference")
     _run(cmd, "Wav2Lip inference", log_file=log_file)

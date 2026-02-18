@@ -214,3 +214,7 @@ outputs/*
 models/*
 !models/.gitkeep
 wav2lip/
+
+# Local dev convenience files
+test_input.mp4
+tests/fixtures/

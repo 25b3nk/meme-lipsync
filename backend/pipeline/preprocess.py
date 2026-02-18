@@ -63,6 +63,25 @@ def _extract_gif_fps(input_path: str) -> float:
     return 10.0  # safe default for GIFs
 
 
+def _image_to_mp4(input_path: str, output_path: str, fps: float = 25, duration: float = 30) -> None:
+    """Convert a static image to a looping MP4.
+
+    30 seconds is enough for any TTS text; Wav2Lip trims the video to match
+    the audio length during inference.
+    """
+    cmd = [
+        "ffmpeg", "-y",
+        "-loop", "1",
+        "-i", input_path,
+        "-t", str(duration),
+        "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",  # ensure even dimensions for x264
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        output_path,
+    ]
+    _run(cmd, "Image→MP4 conversion")
+
+
 def _gif_to_mp4(input_path: str, output_path: str, fps: float) -> None:
     """Convert a GIF to MP4 using FFmpeg."""
     cmd = [
@@ -119,6 +138,16 @@ def _has_face(mp4_path: str, max_frames: int = 10) -> bool:
     cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
     face_cascade = cv2.CascadeClassifier(cascade_path)
 
+    # For static images, use imread directly
+    suffix = Path(mp4_path).suffix.lower()
+    if suffix in (".jpg", ".jpeg", ".png", ".webp"):
+        frame = cv2.imread(mp4_path)
+        if frame is None:
+            return False
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(30, 30))
+        return len(faces) > 0
+
     cap = cv2.VideoCapture(mp4_path)
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open video for face detection: {mp4_path}")
@@ -166,11 +195,15 @@ def preprocess_video(input_path: str, job_dir: str) -> dict:
         fps = _extract_gif_fps(input_path)
         logger.info("Detected GIF FPS: %.2f", fps)
         _gif_to_mp4(input_path, mp4_path, fps)
+    elif suffix in (".jpg", ".jpeg", ".png", ".webp"):
+        logger.info("Input is image — creating 30-second looping MP4")
+        fps = 25.0
+        _image_to_mp4(input_path, mp4_path, fps=fps)
     elif suffix in (".mp4", ".mov", ".webm", ".avi"):
         logger.info("Input is video — copying to job directory")
         shutil.copy2(input_path, mp4_path)
     else:
-        raise ValueError(f"Unsupported file type: {suffix}. Please upload a GIF or MP4.")
+        raise ValueError(f"Unsupported file type: {suffix}. Please upload an image, GIF, or video.")
 
     info = _get_video_info(mp4_path)
 

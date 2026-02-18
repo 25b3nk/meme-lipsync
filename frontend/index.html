@@ -244,15 +244,15 @@
 
 <header>
   <h1>Meme Lip-Sync Generator</h1>
-  <p>Upload a meme GIF or MP4, type new text, get a talking meme.</p>
+  <p>Upload a meme image, GIF, or MP4, type new text, get a talking meme.</p>
 </header>
 
 <!-- ── Step 1: Upload ───────────────────────────────────────────────────── -->
 <div class="card" id="upload-card">
-  <h2>Step 1 — Upload meme</h2>
+  <h2>Step 1 — Upload meme (image, GIF, or MP4)</h2>
   <div id="drop-zone">
-    <input type="file" id="file-input" accept=".gif,.mp4,.mov,.webm" />
-    <p>Drag &amp; drop a <span>GIF or MP4</span> here</p>
+    <input type="file" id="file-input" accept=".gif,.jpg,.jpeg,.png,.webp,.mp4,.mov,.webm" />
+    <p>Drag &amp; drop an <span>image, GIF, or MP4</span> here</p>
     <p style="margin-top:0.3rem;font-size:0.8rem;">or click to browse &mdash; max 50 MB</p>
   </div>
   <div id="preview-container">
@@ -359,9 +359,9 @@
   // ── File handling ─────────────────────────────────────────────────────────
   async function handleFileSelect(file) {
     const ext = file.name.split('.').pop().toLowerCase();
-    const allowed = ['gif', 'mp4', 'mov', 'webm'];
+    const allowed = ['gif', 'jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov', 'webm'];
     if (!allowed.includes(ext)) {
-      showError(`Unsupported file type ".${ext}". Please upload a GIF or MP4.`);
+      showError(`Unsupported file type ".${ext}". Please upload an image, GIF, or MP4.`);
       return;
     }
     if (file.size > 50 * 1024 * 1024) {
@@ -374,7 +374,8 @@
 
     // Show local preview immediately
     const objectUrl = URL.createObjectURL(file);
-    if (ext === 'gif') {
+    const isImage = ['gif', 'jpg', 'jpeg', 'png', 'webp'].includes(ext);
+    if (isImage) {
       previewImg.src = objectUrl;
       previewImg.style.display = 'block';
       previewVid.style.display = 'none';
