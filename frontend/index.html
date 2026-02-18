@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meme Lip-Sync Generator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #111;
+      --surface:   #1a1a1a;
+      --border:    #2a2a2a;
+      --accent:    #00ff88;
+      --accent-dim:#00cc6a;
+      --danger:    #ff4444;
+      --text:      #e0e0e0;
+      --text-dim:  #888;
+      --radius:    8px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem 4rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    header h1 {
+      font-size: clamp(1.5rem, 4vw, 2.4rem);
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.5px;
+    }
+
+    header p {
+      color: var(--text-dim);
+      margin-top: 0.5rem;
+      font-size: 0.95rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      width: 100%;
+      max-width: 560px;
+      margin-bottom: 1.25rem;
+    }
+
+    .card h2 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+      margin-bottom: 1rem;
+    }
+
+    /* ── Drop zone ─────────────────────────────────────────────────────────── */
+    #drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 2rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+
+    #drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(0,255,136,0.05);
+    }
+
+    #drop-zone p { color: var(--text-dim); font-size: 0.9rem; }
+    #drop-zone span { color: var(--accent); font-weight: 600; }
+
+    #file-input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ── Preview ───────────────────────────────────────────────────────────── */
+    #preview-container {
+      margin-top: 1rem;
+      display: none;
+      text-align: center;
+    }
+
+    #preview-container img,
+    #preview-container video {
+      max-width: 100%;
+      max-height: 300px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+
+    #preview-label {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-top: 0.4rem;
+    }
+
+    /* ── Text input ────────────────────────────────────────────────────────── */
+    textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      padding: 0.75rem;
+      font-size: 0.95rem;
+      resize: vertical;
+      min-height: 80px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    textarea:focus { border-color: var(--accent); }
+
+    #char-counter {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      text-align: right;
+      margin-top: 0.3rem;
+    }
+
+    #char-counter.over { color: var(--danger); }
+
+    /* ── Button ────────────────────────────────────────────────────────────── */
+    button#generate-btn {
+      width: 100%;
+      padding: 0.85rem;
+      background: var(--accent);
+      color: #000;
+      font-weight: 700;
+      font-size: 1rem;
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+      max-width: 560px;
+    }
+
+    button#generate-btn:hover:not(:disabled) { background: var(--accent-dim); }
+    button#generate-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Progress ──────────────────────────────────────────────────────────── */
+    #progress-section {
+      display: none;
+      width: 100%;
+      max-width: 560px;
+    }
+
+    #stage-label {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      margin-bottom: 0.5rem;
+    }
+
+    #stage-label span { color: var(--accent); font-weight: 600; }
+
+    .progress-bar-bg {
+      background: var(--border);
+      border-radius: 99px;
+      height: 8px;
+      overflow: hidden;
+    }
+
+    #progress-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 99px;
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+
+    /* ── Result ────────────────────────────────────────────────────────────── */
+    #result-section {
+      display: none;
+      width: 100%;
+      max-width: 560px;
+    }
+
+    #result-gif {
+      width: 100%;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+
+    #download-btn {
+      display: block;
+      margin-top: 0.75rem;
+      text-align: center;
+      padding: 0.7rem;
+      background: transparent;
+      border: 1px solid var(--accent);
+      border-radius: var(--radius);
+      color: var(--accent);
+      font-weight: 600;
+      text-decoration: none;
+      transition: background 0.2s;
+      cursor: pointer;
+    }
+
+    #download-btn:hover { background: rgba(0,255,136,0.08); }
+
+    /* ── Error ─────────────────────────────────────────────────────────────── */
+    #error-section {
+      display: none;
+      width: 100%;
+      max-width: 560px;
+      background: rgba(255,68,68,0.1);
+      border: 1px solid rgba(255,68,68,0.35);
+      border-radius: var(--radius);
+      padding: 1rem 1.25rem;
+      color: var(--danger);
+      font-size: 0.9rem;
+    }
+
+    #error-section strong { display: block; margin-bottom: 0.3rem; }
+
+    /* ── Responsive ────────────────────────────────────────────────────────── */
+    @media (max-width: 480px) {
+      body { padding: 1.25rem 0.75rem 3rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Meme Lip-Sync Generator</h1>
+  <p>Upload a meme GIF or MP4, type new text, get a talking meme.</p>
+</header>
+
+<!-- ── Step 1: Upload ───────────────────────────────────────────────────── -->
+<div class="card" id="upload-card">
+  <h2>Step 1 — Upload meme</h2>
+  <div id="drop-zone">
+    <input type="file" id="file-input" accept=".gif,.mp4,.mov,.webm" />
+    <p>Drag &amp; drop a <span>GIF or MP4</span> here</p>
+    <p style="margin-top:0.3rem;font-size:0.8rem;">or click to browse &mdash; max 50 MB</p>
+  </div>
+  <div id="preview-container">
+    <img id="preview-img" src="" alt="preview" style="display:none" />
+    <video id="preview-vid" autoplay loop muted playsinline style="display:none"></video>
+    <div id="preview-label"></div>
+  </div>
+</div>
+
+<!-- ── Step 2: Text ─────────────────────────────────────────────────────── -->
+<div class="card" id="text-card">
+  <h2>Step 2 — New meme text</h2>
+  <textarea id="meme-text" placeholder="What should this meme say?" maxlength="200"></textarea>
+  <div id="char-counter">0 / 200</div>
+</div>
+
+<!-- ── Generate button ──────────────────────────────────────────────────── -->
+<button id="generate-btn" disabled>Generate Lip-Sync</button>
+
+<!-- ── Progress ─────────────────────────────────────────────────────────── -->
+<div id="progress-section" class="card" style="margin-top:1.25rem;">
+  <h2>Processing</h2>
+  <div id="stage-label">Stage: <span id="stage-name">—</span></div>
+  <div class="progress-bar-bg" style="margin-top:0.75rem;">
+    <div id="progress-fill"></div>
+  </div>
+</div>
+
+<!-- ── Result ───────────────────────────────────────────────────────────── -->
+<div id="result-section" class="card">
+  <h2>Result</h2>
+  <img id="result-gif" src="" alt="lip-synced meme" />
+  <a id="download-btn" download="meme-lipsync.gif">Download GIF</a>
+</div>
+
+<!-- ── Error ────────────────────────────────────────────────────────────── -->
+<div id="error-section">
+  <strong>Something went wrong</strong>
+  <span id="error-msg"></span>
+</div>
+
+<script>
+  const API_BASE = '';   // same origin
+  const POLL_INTERVAL_MS = 1500;
+
+  // ── State ────────────────────────────────────────────────────────────────
+  let jobId = null;
+  let taskId = null;
+  let pollTimer = null;
+
+  // ── DOM refs ──────────────────────────────────────────────────────────────
+  const dropZone      = document.getElementById('drop-zone');
+  const fileInput     = document.getElementById('file-input');
+  const previewCont   = document.getElementById('preview-container');
+  const previewImg    = document.getElementById('preview-img');
+  const previewVid    = document.getElementById('preview-vid');
+  const previewLabel  = document.getElementById('preview-label');
+  const memeText      = document.getElementById('meme-text');
+  const charCounter   = document.getElementById('char-counter');
+  const generateBtn   = document.getElementById('generate-btn');
+  const progressSec   = document.getElementById('progress-section');
+  const stageName     = document.getElementById('stage-name');
+  const progressFill  = document.getElementById('progress-fill');
+  const resultSec     = document.getElementById('result-section');
+  const resultGif     = document.getElementById('result-gif');
+  const downloadBtn   = document.getElementById('download-btn');
+  const errorSec      = document.getElementById('error-section');
+  const errorMsg      = document.getElementById('error-msg');
+
+  // ── Drag-and-drop ─────────────────────────────────────────────────────────
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('drag-over');
+  });
+
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileSelect(file);
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) handleFileSelect(fileInput.files[0]);
+  });
+
+  // ── Text counter ──────────────────────────────────────────────────────────
+  memeText.addEventListener('input', () => {
+    const len = memeText.value.length;
+    charCounter.textContent = `${len} / 200`;
+    charCounter.classList.toggle('over', len >= 200);
+    updateGenerateBtn();
+  });
+
+  function updateGenerateBtn() {
+    const ready = jobId && memeText.value.trim().length > 0 && memeText.value.length <= 200;
+    generateBtn.disabled = !ready;
+  }
+
+  // ── File handling ─────────────────────────────────────────────────────────
+  async function handleFileSelect(file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const allowed = ['gif', 'mp4', 'mov', 'webm'];
+    if (!allowed.includes(ext)) {
+      showError(`Unsupported file type ".${ext}". Please upload a GIF or MP4.`);
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      showError('File is too large (max 50 MB).');
+      return;
+    }
+
+    clearError();
+    hideResult();
+
+    // Show local preview immediately
+    const objectUrl = URL.createObjectURL(file);
+    if (ext === 'gif') {
+      previewImg.src = objectUrl;
+      previewImg.style.display = 'block';
+      previewVid.style.display = 'none';
+    } else {
+      previewVid.src = objectUrl;
+      previewVid.style.display = 'block';
+      previewImg.style.display = 'none';
+    }
+    previewLabel.textContent = `${file.name} — ${(file.size / 1024).toFixed(0)} KB`;
+    previewCont.style.display = 'block';
+
+    // Upload to server
+    generateBtn.disabled = true;
+    generateBtn.textContent = 'Uploading…';
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: formData });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || 'Upload failed');
+      }
+      const data = await res.json();
+      jobId = data.job_id;
+      generateBtn.textContent = 'Generate Lip-Sync';
+      updateGenerateBtn();
+    } catch (err) {
+      showError(`Upload error: ${err.message}`);
+      generateBtn.textContent = 'Generate Lip-Sync';
+      generateBtn.disabled = true;
+    }
+  }
+
+  // ── Generate ──────────────────────────────────────────────────────────────
+  generateBtn.addEventListener('click', async () => {
+    if (!jobId || !memeText.value.trim()) return;
+
+    clearError();
+    hideResult();
+    showProgress();
+    generateBtn.disabled = true;
+    generateBtn.textContent = 'Processing…';
+
+    try {
+      const res = await fetch(`${API_BASE}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: jobId, text: memeText.value.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || 'Failed to start generation');
+      }
+      const data = await res.json();
+      taskId = data.task_id;
+      startPolling();
+    } catch (err) {
+      hideProgress();
+      showError(`Generation error: ${err.message}`);
+      generateBtn.textContent = 'Generate Lip-Sync';
+      updateGenerateBtn();
+    }
+  });
+
+  // ── Polling ───────────────────────────────────────────────────────────────
+  const STAGE_LABELS = {
+    queued:          'Waiting in queue…',
+    preprocessing:   'Stage 1/4 — Preprocessing video',
+    tts:             'Stage 2/4 — Generating speech',
+    lipsync:         'Stage 3/4 — Lip-sync inference (this takes a while)',
+    postprocessing:  'Stage 4/4 — Converting to GIF',
+    done:            'Done!',
+    error:           'Error',
+  };
+
+  function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pollStatus, POLL_INTERVAL_MS);
+    pollStatus(); // immediate first check
+  }
+
+  async function pollStatus() {
+    if (!taskId) return;
+    try {
+      const res = await fetch(`${API_BASE}/status/${taskId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      const label = STAGE_LABELS[data.status] || data.status;
+      stageName.textContent = label;
+      progressFill.style.width = `${data.progress || 0}%`;
+
+      if (data.status === 'done') {
+        clearInterval(pollTimer);
+        hideProgress();
+        showResult(data.output_url);
+        generateBtn.textContent = 'Generate Lip-Sync';
+        updateGenerateBtn();
+      } else if (data.status === 'error') {
+        clearInterval(pollTimer);
+        hideProgress();
+        showError(data.error || 'An unknown error occurred.');
+        generateBtn.textContent = 'Generate Lip-Sync';
+        updateGenerateBtn();
+      }
+    } catch (_) {
+      // Network hiccup — keep polling
+    }
+  }
+
+  // ── UI helpers ────────────────────────────────────────────────────────────
+  function showProgress() {
+    progressSec.style.display = 'block';
+    progressFill.style.width = '0%';
+    stageName.textContent = 'Starting…';
+  }
+
+  function hideProgress() {
+    progressSec.style.display = 'none';
+  }
+
+  function showResult(outputUrl) {
+    resultGif.src = `${API_BASE}${outputUrl}`;
+    downloadBtn.href = `${API_BASE}${outputUrl}`;
+    resultSec.style.display = 'block';
+    resultSec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function hideResult() {
+    resultSec.style.display = 'none';
+    resultGif.src = '';
+  }
+
+  function showError(msg) {
+    errorMsg.textContent = msg;
+    errorSec.style.display = 'block';
+    errorSec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function clearError() {
+    errorSec.style.display = 'none';
+    errorMsg.textContent = '';
+  }
+</script>
+</body>
+</html>
