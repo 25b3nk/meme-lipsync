@@ -32,12 +32,21 @@ This will:
 - Install backend Python dependencies
 - Print instructions for the manual model download
 
-### 2. Download the model weights (manual)
+### 2. Download the model weights (automatic)
 
-The Wav2Lip GAN weights cannot be downloaded automatically (Google Drive requires browser authentication). Download `wav2lip_gan.pth` from the link below and place it at `models/wav2lip_gan.pth`.
+`setup.sh` downloads `wav2lip_gan.pth` automatically from Hugging Face (~436 MB)
+and verifies its SHA-256 checksum. No manual step is required.
 
-**Download link:**
-https://iiitaphyd-my.sharepoint.com/personal/radrabha_m_research_iiit_ac_in/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fradrabha_m_research_iiit_ac_in%2FDocuments%2FWav2Lip_Models%2Fwav2lip_gan%2Epth
+If you prefer to download manually:
+
+```bash
+wget -O models/wav2lip_gan.pth \
+  https://huggingface.co/camenduru/Wav2Lip/resolve/main/checkpoints/wav2lip_gan.pth
+```
+
+Alternative mirrors (same file):
+- https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth
+- https://huggingface.co/rippertnt/wav2lip/resolve/main/wav2lip_gan.pth
 
 > Use `wav2lip_gan.pth`, **not** `wav2lip.pth` — the GAN variant produces sharper, more visually convincing lip movements.
 
