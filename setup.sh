@@ -24,36 +24,59 @@ pip install -r wav2lip/requirements.txt
 echo "==> Installing backend requirements"
 pip install -r backend/requirements.txt
 
-# ── Model weights notice ──────────────────────────────────────────────────────
+# ── Download model weights ────────────────────────────────────────────────────
+MODEL_PATH="models/wav2lip_gan.pth"
+MODEL_URL="https://huggingface.co/camenduru/Wav2Lip/resolve/main/checkpoints/wav2lip_gan.pth"
+EXPECTED_SHA256="ca9ab7b7b812c0e80a6e70a5977c545a1e8a365a6c49d5e533023c034d7ac3d8"
+
+if [ -f "$MODEL_PATH" ]; then
+  echo "==> Model weights already present at $MODEL_PATH — skipping download"
+else
+  echo "==> Downloading wav2lip_gan.pth from Hugging Face (~436 MB)"
+  if command -v wget &>/dev/null; then
+    wget -q --show-progress -O "$MODEL_PATH" "$MODEL_URL"
+  elif command -v curl &>/dev/null; then
+    curl -L --progress-bar -o "$MODEL_PATH" "$MODEL_URL"
+  else
+    echo "ERROR: Neither wget nor curl found. Install one and re-run." >&2
+    exit 1
+  fi
+
+  echo "==> Verifying checksum"
+  if command -v sha256sum &>/dev/null; then
+    ACTUAL=$(sha256sum "$MODEL_PATH" | awk '{print $1}')
+  elif command -v shasum &>/dev/null; then
+    ACTUAL=$(shasum -a 256 "$MODEL_PATH" | awk '{print $1}')
+  else
+    echo "WARNING: No sha256 tool found — skipping checksum verification"
+    ACTUAL="$EXPECTED_SHA256"
+  fi
+
+  if [ "$ACTUAL" != "$EXPECTED_SHA256" ]; then
+    echo "ERROR: Checksum mismatch! File may be corrupt." >&2
+    echo "  expected: $EXPECTED_SHA256" >&2
+    echo "  actual:   $ACTUAL" >&2
+    rm -f "$MODEL_PATH"
+    exit 1
+  fi
+  echo "==> Checksum OK"
+fi
+
+# ── Done ──────────────────────────────────────────────────────────────────────
 cat <<'MSG'
 
 ==========================================================================
- MANUAL STEP REQUIRED — Download Wav2Lip model weights
+ Setup complete!
 ==========================================================================
 
- The Wav2Lip GAN model weights cannot be downloaded automatically
- because Google Drive requires browser-based authentication.
-
- Please download  wav2lip_gan.pth  from the link below and save it to:
-
-     models/wav2lip_gan.pth
-
- Download link:
- https://iiitaphyd-my.sharepoint.com/personal/radrabha_m_research_iiit_ac_in/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fradrabha_m_research_iiit_ac_in%2FDocuments%2FWav2Lip_Models%2Fwav2lip_gan%2Epth
-
- Use wav2lip_gan.pth (NOT wav2lip.pth) — the GAN variant produces
- sharper, more visually convincing lip movements.
-
-==========================================================================
-
-Setup complete. After placing the model weights, start the stack with:
+Start the full stack with Docker:
 
     docker-compose up --build
 
-or, for local development without Docker:
+Or run locally without Docker (three separate terminals):
 
-    redis-server &
-    celery -A backend.tasks worker --loglevel=info --concurrency=1 &
+    redis-server
+    celery -A backend.tasks worker --loglevel=info --concurrency=1
     uvicorn backend.main:app --reload
 
 Then open http://localhost:8000 in your browser.
